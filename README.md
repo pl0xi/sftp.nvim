@@ -30,18 +30,53 @@ Install with `lazy.nvim`:
 
 To configure the plugin, you can create a `.sftp/config.lua` file in your project's root. You can create this file manually or by running the `:SFTPInit` command.
 
-The configuration file should return a Lua table with the following structure:
+The configuration file should return a Lua table with a `servers` table, where each entry is a named server configuration. The default configuration is under the alias `default`.
+
+Each server configuration can either use an SSH `target` (alias) or direct `host` and `user` credentials. If `target` is provided, it will be prioritized.
 
 ```lua
 return {
-  sftp_server = {
-    host = "your_sftp_host",
-    user = "your_sftp_user",
-    remote_path = "/path/to/your/remote/project/root",
-    local_path = "/path/to/your/local/project/root" -- Optional: Defaults to the project root
+  servers = {
+    default = {
+      -- Option 1: Using an SSH alias (recommended)
+      target = "your_ssh_alias",
+      -- Option 2: Using direct host and user
+      -- host = "your_sftp_host",
+      -- user = "your_sftp_user",
+      remote_path = "/path/to/your/remote/project/root",
+      local_path = vim.fn.getcwd() -- Defaults to the current working directory
+    },
+    staging = {
+      target = "staging_ssh_alias",
+      remote_path = "/path/to/your/staging/root",
+      local_path = vim.fn.getcwd()
+    }
   }
 }
 ```
+
+### SSH Configuration
+
+If you use the `target` field, it corresponds to an alias in your SSH configuration file (`~/.ssh/config`). This allows you to use your SSH aliases to connect to the remote server, which is a more secure and convenient approach.
+
+Here's an example of how you might configure your SSH alias:
+
+```
+Host your_ssh_alias
+  HostName your_sftp_host
+  User your_sftp_user
+  IdentityFile ~/.ssh/your_private_key
+```
+
+### Aliases
+
+You can define multiple server configurations, or "aliases", in your configuration file. To use a specific alias, you can pass it as an argument to the `:SFTPDiff` command:
+
+```
+:SFTPDiff staging
+```
+
+If you don't provide an alias, the `default` configuration will be used.
 
 ### `local_path`
 

@@ -9,7 +9,7 @@ function M.setup()
     return
   end
 
-  vim.api.nvim_create_user_command("SFTPDiff", commands.diff_remote_file, {})
+  vim.api.nvim_create_user_command("SFTPDiff", commands.diff_remote_file, { nargs = "?" })
   vim.api.nvim_create_user_command("SFTPInit", commands.init_config, {})
 
   has_been_setup = true
