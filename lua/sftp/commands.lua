@@ -13,6 +13,16 @@ function M.diff_remote_file(args)
     return
   end
 
+  if not server_config.remote_path then
+    log.error("Configuration for alias '" .. alias .. "' is missing 'remote_path'.")
+    return
+  end
+
+  if not server_config.local_path then
+    log.error("Configuration for alias '" .. alias .. "' is missing 'local_path'.")
+    return
+  end
+
   local local_file = vim.api.nvim_buf_get_name(0)
   if local_file == "" then
     log.error("No file open in current buffer.")
@@ -33,7 +43,17 @@ function M.diff_remote_file(args)
     return
   end
 
+  local stderr_output = {}
   local job_id = vim.fn.jobstart(sftp_command, {
+    on_stderr = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stderr_output, line)
+          end
+        end
+      end
+    end,
     on_exit = function(_, exit_code)
       if exit_code == 0 then
         vim.schedule(function()
@@ -43,20 +63,30 @@ function M.diff_remote_file(args)
           end, 1000)
         end)
       else
-        log.error("Error downloading remote file. Check your SFTP configuration and if the file exists on the remote server.")
+        local error_message = "Error downloading remote file."
+        if #stderr_output > 0 then
+          error_message = error_message .. " SFTP command output:\n" .. table.concat(stderr_output, "\n")
+        else
+          error_message = error_message .. " Check your SFTP configuration and if the file exists on the remote server. Exit code: " .. tostring(exit_code)
+        end
+        log.error(error_message)
       end
     end,
   })
 
   if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP download job.")
+    log.error("Failed to start SFTP download job. Command: " .. sftp_command)
   end
 end
 
 function M.init_config()
   local sftp_dir = vim.fn.getcwd() .. "/.sftp"
   if vim.fn.isdirectory(sftp_dir) == 0 then
-    vim.fn.mkdir(sftp_dir)
+    local ok, err = pcall(vim.fn.mkdir, sftp_dir)
+    if not ok then
+      log.error("Failed to create directory " .. sftp_dir .. ": " .. tostring(err))
+      return
+    end
   end
 
   local config_path = sftp_dir .. "/config.lua"
@@ -76,13 +106,13 @@ function M.init_config()
 }
 ]]
 
-  local f = io.open(config_path, "w")
+  local f, err = io.open(config_path, "w")
   if f then
     f:write(config_template)
     f:close()
     log.info("SFTP config file created at: " .. config_path)
   else
-    log.error("Error creating SFTP config file.")
+    log.error("Error creating SFTP config file " .. config_path .. ": " .. tostring(err))
   end
 end
 
