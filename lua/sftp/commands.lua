@@ -197,7 +197,9 @@ function M.upload_remote_file(args)
 
   -- Create a batch file for sftp
   local batch_temp_file = vim.fn.tempname()
-  local batch_content = string.format('put "%s" "%s"', local_file, remote_file)
+  -- sftp client might prefer forward slashes for the local path
+  local normalized_local_file_for_sftp = string.gsub(local_file, "\\", "/")
+  local batch_content = string.format('put "%s" "%s"', normalized_local_file_for_sftp, remote_file)
 
   local f, err = io.open(batch_temp_file, "w")
   if not f then
