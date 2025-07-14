@@ -32,9 +32,12 @@ function M.diff_remote_file(args)
   -- Prepare paths
   local downloaded_temp_file = vim.fn.tempname()
 
+  -- Resolve local_path to an absolute path, assuming it's relative to cwd if not absolute
+  local absolute_local_path = vim.fn.fnamemodify(server_config.local_path, ':p')
+
   -- Normalize path separators to forward slashes for consistency
   local normalized_local_file = string.gsub(local_file, "[\\/]+", "/")
-  local normalized_local_path = string.gsub(server_config.local_path, "[\\/]+", "/")
+  local normalized_local_path = string.gsub(absolute_local_path, "[\\/]+", "/")
 
   -- Ensure local_path is a prefix and calculate relative path
   local relative_file
@@ -49,6 +52,7 @@ function M.diff_remote_file(args)
     log.error("The current file is not inside the configured 'local_path'.")
     log.error("File path: " .. local_file)
     log.error("Configured local_path: " .. server_config.local_path)
+    log.error("Resolved absolute local_path: " .. absolute_local_path)
     return
   end
 
