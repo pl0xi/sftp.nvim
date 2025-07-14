@@ -4,7 +4,7 @@ local core = require("sftp.core")
 local log = require("sftp.log")
 
 function M.diff_remote_file(args)
-  local alias = args.fargs[1] or "default"
+  local alias = (args and args.fargs and args.fargs[1]) or "default"
   local config = core.load_config()
 
   local server_config = config.servers[alias]
@@ -33,7 +33,7 @@ function M.diff_remote_file(args)
   local downloaded_temp_file = vim.fn.tempname()
 
   -- Resolve local_path to an absolute path, assuming it's relative to cwd if not absolute
-  local absolute_local_path = vim.fn.fnamemodify(server_config.local_path, ':p')
+  local absolute_local_path = vim.fn.fnamemodify(server_config.local_path, ":p")
 
   -- Normalize path separators to forward slashes for consistency
   local normalized_local_file = string.gsub(local_file, "[\\/]+", "/")
@@ -139,7 +139,7 @@ end
 
 
 function M.upload_remote_file(args)
-  local alias = args.fargs[1] or "default"
+  local alias = (args and args.fargs and args.fargs[1]) or "default"
   local config = core.load_config()
 
   local server_config = config.servers[alias]
@@ -165,7 +165,7 @@ function M.upload_remote_file(args)
   end
 
   -- Resolve local_path to an absolute path, assuming it's relative to cwd if not absolute
-  local absolute_local_path = vim.fn.fnamodify(server_config.local_path, ':p')
+  local absolute_local_path = vim.fn.fnamemodify(server_config.local_path, ":p")
 
   -- Normalize path separators to forward slashes for consistency
   local normalized_local_file = string.gsub(local_file, "[\\/]+", "/")
