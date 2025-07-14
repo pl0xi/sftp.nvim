@@ -31,6 +31,7 @@ function M.diff_remote_file(args)
 
   local temp_file = vim.fn.tempname()
   local relative_file = string.sub(local_file, #server_config.local_path + 2)
+  relative_file = string.gsub(relative_file, "\\", "/")
   local remote_file = server_config.remote_path .. "/" .. relative_file
 
   local sftp_command
