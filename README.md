@@ -2,6 +2,19 @@
 
 Syncing files with remote servers.
 
+## Installation
+
+Install with `lazy.nvim`:
+
+```lua
+{
+  "your-username/sftp.nvim",
+  config = function()
+    -- No configuration needed here, as it's handled by the project-specific config file
+  end
+}
+```
+
 ## Features
 
 - Compare local files with their remote counterparts using `diffsplit`.
