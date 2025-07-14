@@ -31,9 +31,34 @@ function M.diff_remote_file(args)
 
   -- Prepare paths
   local downloaded_temp_file = vim.fn.tempname()
-  local relative_file = string.sub(local_file, #server_config.local_path + 2)
-  relative_file = string.gsub(relative_file, "\\", "/")
-  local remote_file = server_config.remote_path .. "/" .. relative_file
+
+  -- Normalize path separators to forward slashes for consistency
+  local normalized_local_file = string.gsub(local_file, "[\\/]+", "/")
+  local normalized_local_path = string.gsub(server_config.local_path, "[\\/]+", "/")
+
+  -- Ensure local_path is a prefix and calculate relative path
+  local relative_file
+  -- Use string.find to check for the prefix. The 'plain' argument (true) avoids magic chars.
+  if string.find(normalized_local_file, normalized_local_path, 1, true) == 1 then
+    relative_file = string.sub(normalized_local_file, #normalized_local_path + 1)
+    -- remove leading slash if present
+    if string.sub(relative_file, 1, 1) == "/" then
+      relative_file = string.sub(relative_file, 2)
+    end
+  else
+    log.error("The current file is not inside the configured 'local_path'.")
+    log.error("File path: " .. local_file)
+    log.error("Configured local_path: " .. server_config.local_path)
+    return
+  end
+
+  -- Construct remote path, ensuring no double slashes
+  local remote_file
+  if string.sub(server_config.remote_path, -1) == "/" then
+    remote_file = server_config.remote_path .. relative_file
+  else
+    remote_file = server_config.remote_path .. "/" .. relative_file
+  end
 
   -- Create a batch file for sftp
   local batch_temp_file = vim.fn.tempname()
