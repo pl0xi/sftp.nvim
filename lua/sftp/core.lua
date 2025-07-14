@@ -1,4 +1,5 @@
 local M = {}
+local log = require("sftp.log")
 
 function M.load_config()
   local default_config = require("sftp.config")
@@ -6,6 +7,7 @@ function M.load_config()
 
   -- Check if the project-specific config file exists
   if vim.fn.filereadable(project_config_path) == 1 then
+    log.info("Project-specific config found at: " .. project_config_path)
     local project_config = dofile(project_config_path)
     -- Merge the project config into the default config
     for k, v in pairs(project_config) do

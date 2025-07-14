@@ -1,6 +1,13 @@
 # sftp.nvim
 
-Syncing files with remote servers.
+A Neovim plugin for syncing files with remote servers.
+
+## Features
+
+- **File Diffing**: Compare local files with their remote counterparts using `diffsplit`.
+- **Project-Specific Configuration**: Easily configure settings on a per-project basis.
+- **Simple Initialization**: Get started quickly with a single command.
+- **Enhanced Error Logging**: Clear, informative error messages using `vim.notify`.
 
 ## Installation
 
@@ -15,24 +22,18 @@ Install with `lazy.nvim`:
 }
 ```
 
-## Features
-
-- Compare local files with their remote counterparts using `diffsplit`.
-- Project-specific configuration for easy setup.
-- Simple initialization command to get started quickly.
-
 ## Commands
 
-- `:SFTPDiff` - Opens a diff view between the local file and the remote file.
-- `:SFTPInit` - Creates a `.sftp/config.lua` file in your project's root with a configuration template.
+- `:SFTPDiff [alias]`: Opens a diff view between the local file and the remote file. If no `alias` is provided, it uses the `default` configuration.
+- `:SFTPInit`: Creates a `.sftp/config.lua` file in your project's root with a configuration template.
 
 ## Configuration
 
-To configure the plugin, you can create a `.sftp/config.lua` file in your project's root. You can create this file manually or by running the `:SFTPInit` command.
+Create a `.sftp/config.lua` file in your project's root to configure the plugin. You can create this file manually or by running the `:SFTPInit` command.
 
-The configuration file should return a Lua table with a `servers` table, where each entry is a named server configuration. The default configuration is under the alias `default`.
+The configuration file should return a Lua table with a `servers` table. Each entry in the `servers` table is a named server configuration (e.g., `default`, `staging`).
 
-Each server configuration can either use an SSH `target` (alias) or direct `host` and `user` credentials. If `target` is provided, it will be prioritized.
+Each server configuration can use either an SSH `target` (alias) or direct `host` and `user` credentials. Using `target` is recommended for better security and convenience.
 
 ```lua
 return {
@@ -57,10 +58,9 @@ return {
 
 ### SSH Configuration
 
-If you use the `target` field, it corresponds to an alias in your SSH configuration file (`~/.ssh/config`). This allows you to use your SSH aliases to connect to the remote server, which is a more secure and convenient approach.
+The `target` field corresponds to an alias in your SSH configuration file (`~/.ssh/config`). This allows you to leverage your existing SSH configurations for secure connections.
 
-Here's an example of how you might configure your SSH alias:
-
+Example `~/.ssh/config` entry:
 ```
 Host your_ssh_alias
   HostName your_sftp_host
@@ -70,16 +70,20 @@ Host your_ssh_alias
 
 ### Aliases
 
-You can define multiple server configurations, or "aliases", in your configuration file. To use a specific alias, you can pass it as an argument to the `:SFTPDiff` command:
+You can define multiple server configurations (aliases) in your `config.lua`. To use a specific alias, pass it as an argument to the `:SFTPDiff` command:
 
 ```
 :SFTPDiff staging
 ```
 
-If you don't provide an alias, the `default` configuration will be used.
+If no alias is provided, the `default` configuration is used.
 
 ### `local_path`
 
-The `local_path` option allows you to specify a subdirectory of your project to sync with the remote server. For example, if your project has a `Backend` and `Frontend` directory, but you only want to sync the `Backend` directory, you can set `local_path` to the full path of the `Backend` directory.
+The `local_path` option specifies the local project directory to be synced with the remote server. When you edit a file, the plugin calculates its path relative to `local_path` to determine the corresponding remote path.
 
-When you edit a file, the plugin will calculate the path of the file relative to the `local_path` and use that to construct the remote path. For example, if your `local_path` is set to `/path/to/your/project/Backend` and you edit the file `/path/to/your/project/Backend/api/user.php`, the plugin will look for the file `api/user.php` in the `remote_path` on the SFTP server.
+For example, if `local_path` is `/path/to/project/src` and you edit `/path/to/project/src/api/main.go`, the plugin will sync it with `api/main.go` inside the `remote_path` on the server.
+
+## Error Logging
+
+The plugin uses `vim.notify` to provide clear and non-intrusive feedback. Errors, such as configuration issues or connection failures, are displayed as notifications, ensuring they are visible without disrupting your workflow.

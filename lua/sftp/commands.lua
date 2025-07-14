@@ -1,6 +1,7 @@
 local M = {}
 
 local core = require("sftp.core")
+local log = require("sftp.log")
 
 function M.diff_remote_file(args)
   local alias = args.fargs[1] or "default"
@@ -8,13 +9,13 @@ function M.diff_remote_file(args)
 
   local server_config = config.servers[alias]
   if not server_config then
-    print("SFTP configuration for alias '" .. alias .. "' not found.")
+    log.error("SFTP configuration for alias '" .. alias .. "' not found.")
     return
   end
 
   local local_file = vim.api.nvim_buf_get_name(0)
   if local_file == "" then
-    print("No file open in current buffer.")
+    log.error("No file open in current buffer.")
     return
   end
 
@@ -28,7 +29,7 @@ function M.diff_remote_file(args)
   elseif server_config.host and server_config.user then
     sftp_command = string.format("sftp %s@%s:%s %s", server_config.user, server_config.host, remote_file, temp_file)
   else
-    print("Invalid SFTP configuration for alias '" .. alias .. "'. Provide either 'target' or both 'host' and 'user'.")
+    log.error("Invalid SFTP configuration for alias '" .. alias .. "'. Provide either 'target' or both 'host' and 'user'.")
     return
   end
 
@@ -42,13 +43,13 @@ function M.diff_remote_file(args)
           end, 1000)
         end)
       else
-        print("Error downloading remote file. Check your SFTP configuration and if the file exists on the remote server.")
+        log.error("Error downloading remote file. Check your SFTP configuration and if the file exists on the remote server.")
       end
     end,
   })
 
   if job_id == 0 or job_id == -1 then
-    print("Failed to start SFTP download job.")
+    log.error("Failed to start SFTP download job.")
   end
 end
 
@@ -60,7 +61,7 @@ function M.init_config()
 
   local config_path = sftp_dir .. "/config.lua"
   if vim.fn.filereadable(config_path) == 1 then
-    print("SFTP config file already exists.")
+    log.info("SFTP config file already exists.")
     return
   end
 
@@ -79,9 +80,9 @@ function M.init_config()
   if f then
     f:write(config_template)
     f:close()
-    print("SFTP config file created at: " .. config_path)
+    log.info("SFTP config file created at: " .. config_path)
   else
-    print("Error creating SFTP config file.")
+    log.error("Error creating SFTP config file.")
   end
 end
 
