@@ -10,7 +10,7 @@ Install with `lazy.nvim`:
 {
   "your-username/sftp.nvim",
   config = function()
-    -- No configuration needed here, as it's handled by the project-specific config file
+    require("sftp").setup()
   end
 }
 ```
