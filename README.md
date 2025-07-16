@@ -2,9 +2,14 @@
 
 A Neovim plugin for syncing files with remote servers.
 
+## Disclaimer
+
+This plugin was primarily developed with the assistance of an AI and was originally created for personal use. While it has been tested, there may be unforeseen bugs or limitations. Please use it with caution and feel free to contribute any improvements!
+
 ## Features
 
 - **File Diffing**: Compare local files with their remote counterparts using `diffsplit`.
+- **File Uploading**: Upload local files to the remote server.
 - **Project-Specific Configuration**: Easily configure settings on a per-project basis.
 - **Simple Initialization**: Get started quickly with a single command.
 - **Enhanced Error Logging**: Clear, informative error messages using `vim.notify`.
@@ -25,6 +30,7 @@ Install with `lazy.nvim`:
 ## Commands
 
 - `:SFTPDiff [alias]`: Opens a diff view between the local file and the remote file. If no `alias` is provided, it uses the `default` configuration.
+- `:SFTPUpload [alias]`: Uploads the current file to the remote server. If no `alias` is provided, it uses the `default` configuration.
 - `:SFTPInit`: Creates a `.sftp/config.lua` file in your project's root with a configuration template.
 
 ## Configuration
@@ -70,7 +76,7 @@ Host your_ssh_alias
 
 ### Aliases
 
-You can define multiple server configurations (aliases) in your `config.lua`. To use a specific alias, pass it as an argument to the `:SFTPDiff` command:
+You can define multiple server configurations (aliases) in your `config.lua`. To use a specific alias, pass it as an argument to the `:SFTPDiff` or `:SFTPUpload` command:
 
 ```
 :SFTPDiff staging
