@@ -1,6 +1,6 @@
 require("sftp").setup()
 
-nvim.api.nvim_create_user_command(
+vim.api.nvim_create_user_command(
   "SftpDiff",
   function(args)
     require("sftp.commands").diff_remote_file(args)
@@ -19,7 +19,7 @@ nvim.api.nvim_create_user_command(
   }
 )
 
-nvim.api.nvim_create_user_command(
+vim.api.nvim_create_user_command(
   "SftpUpload",
   function(args)
     require("sftp.commands").upload_remote_file(args)
@@ -38,7 +38,7 @@ nvim.api.nvim_create_user_command(
   }
 )
 
-nvim.api.nvim_create_user_command(
+vim.api.nvim_create_user_command(
   "SftpInitConfig",
   function()
     require("sftp.commands").init_config()
