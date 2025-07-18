@@ -11,6 +11,7 @@ Only tested on Windows
 
 - **File Diffing**: Compare local files with their remote counterparts using `diffsplit`.
 - **File Uploading**: Upload local files to the remote server.
+- **File Downloading**: Download remote files and replace the current file content.
 - **Project-Specific Configuration**: Easily configure settings on a per-project basis.
 - **Simple Initialization**: Get started quickly with a single command.
 - **Enhanced Error Logging**: Clear, informative error messages using `vim.notify`.
@@ -32,6 +33,7 @@ Install with `lazy.nvim`:
 
 - `:SFTPDiff [alias]`: Opens a diff view between the local file and the remote file. If no `alias` is provided, it uses the `default` configuration.
 - `:SFTPUpload [alias]`: Uploads the current file to the remote server. If no `alias` is provided, it uses the `default` configuration.
+- `:SFTPDownload [alias]`: Downloads the remote version of the current file and replaces the local content. If no `alias` is provided, it uses the `default` configuration.
 - `:SFTPInit`: Creates a `.sftp/config.lua` file in your project's root with a configuration template.
 
 ## Configuration
@@ -77,10 +79,12 @@ Host your_ssh_alias
 
 ### Aliases
 
-You can define multiple server configurations (aliases) in your `config.lua`. To use a specific alias, pass it as an argument to the `:SFTPDiff` or `:SFTPUpload` command:
+You can define multiple server configurations (aliases) in your `config.lua`. To use a specific alias, pass it as an argument to the `:SFTPDiff`, `:SFTPUpload`, or `:SFTPDownload` command:
 
 ```
 :SFTPDiff staging
+:SFTPUpload staging
+:SFTPDownload staging
 ```
 
 If no alias is provided, the `default` configuration is used.
