@@ -435,6 +435,12 @@ function M.init_config()
       remote_path = "/path/to/your/remote/project/root",
       local_path = vim.fn.getcwd() -- Defaults to the current working directory
     }
+  },
+  -- Automatic file discrepancy checking configuration
+  discrepancy_check = {
+    enabled = false,    -- Set to true to enable automatic checking on file open
+    server = "default", -- Server alias to use for checking
+    delay = 500,        -- Delay in milliseconds before fetching remote file
   }
 }
 ]]

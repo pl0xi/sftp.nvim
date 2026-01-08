@@ -12,6 +12,7 @@ Only tested on Windows
 - **File Diffing**: Compare local files with their remote counterparts using `diffsplit`.
 - **File Uploading**: Upload local files to the remote server.
 - **File Downloading**: Download remote files and replace the current file content.
+- **Automatic Discrepancy Detection**: Automatically check for differences between local and remote files when opening a file.
 - **Project-Specific Configuration**: Easily configure settings on a per-project basis.
 - **Simple Initialization**: Get started quickly with a single command.
 - **Enhanced Error Logging**: Clear, informative error messages using `vim.notify`.
@@ -24,7 +25,14 @@ Install with `lazy.nvim`:
 {
   "your-username/sftp.nvim",
   config = function()
-    require("sftp").setup()
+    require("sftp").setup({
+      -- Optional: Enable automatic discrepancy detection
+      discrepancy_check = {
+        enabled = true,     -- Enable automatic checking on file open
+        server = "default", -- Server alias to use for checking
+        delay = 500,        -- Delay in ms before fetching remote file
+      }
+    })
   end
 }
 ```
@@ -94,6 +102,51 @@ If no alias is provided, the `default` configuration is used.
 The `local_path` option specifies the local project directory to be synced with the remote server. When you edit a file, the plugin calculates its path relative to `local_path` to determine the corresponding remote path.
 
 For example, if `local_path` is `/path/to/project/src` and you edit `/path/to/project/src/api/main.go`, the plugin will sync it with `api/main.go` inside the `remote_path` on the server.
+
+### Automatic Discrepancy Detection
+
+The plugin can automatically check for differences between local and remote files when you open a file. This is useful for detecting when the remote file has been modified by someone else.
+
+To enable this feature, add a `discrepancy_check` section to your configuration:
+
+```lua
+return {
+  servers = {
+    default = {
+      target = "your_ssh_alias",
+      remote_path = "/path/to/your/remote/project/root",
+      local_path = vim.fn.getcwd()
+    }
+  },
+  discrepancy_check = {
+    enabled = true,     -- Enable automatic checking on file open
+    server = "default", -- Server alias to use for checking
+    delay = 500,        -- Delay in milliseconds before fetching remote file
+  }
+}
+```
+
+#### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable or disable automatic discrepancy checking |
+| `server` | string | `"default"` | Server alias to use for remote file comparison |
+| `delay` | number | `500` | Delay in milliseconds before fetching the remote file |
+
+When a discrepancy is detected, you'll see a warning notification suggesting to use `:SftpDiff` to view the differences.
+
+You can also configure this in your `setup()` call:
+
+```lua
+require("sftp").setup({
+  discrepancy_check = {
+    enabled = true,
+    server = "production",
+    delay = 1000,
+  }
+})
+```
 
 ## Error Logging
 
