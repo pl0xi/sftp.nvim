@@ -3,6 +3,65 @@ local M = {}
 local core = require("sftp.core")
 local log = require("sftp.log")
 
+-- Use vim.uv (Neovim 0.10+) or vim.loop (older versions)
+local uv = vim.uv or vim.loop
+
+-- Helper function to run sftp command using libuv spawn (bypasses shell entirely)
+local function run_sftp_command(sftp_args, on_success, on_error)
+  local stderr_chunks = {}
+  local stdout_chunks = {}
+
+  local stdout = uv.new_pipe(false)
+  local stderr = uv.new_pipe(false)
+
+  local handle, pid
+  handle, pid = uv.spawn("sftp", {
+    args = sftp_args,
+    stdio = { nil, stdout, stderr },
+  }, function(exit_code, signal)
+    -- Close handles
+    stdout:close()
+    stderr:close()
+    if handle then
+      handle:close()
+    end
+
+    local stderr_output = table.concat(stderr_chunks, "")
+
+    vim.schedule(function()
+      if exit_code == 0 then
+        on_success()
+      else
+        on_error(exit_code, stderr_output)
+      end
+    end)
+  end)
+
+  if not handle then
+    -- Failed to spawn - pid contains error message
+    vim.schedule(function()
+      on_error(-1, "Failed to spawn sftp: " .. tostring(pid))
+    end)
+    return false
+  end
+
+  -- Read stderr
+  stderr:read_start(function(err, data)
+    if data then
+      table.insert(stderr_chunks, data)
+    end
+  end)
+
+  -- Read stdout (not used but prevents blocking)
+  stdout:read_start(function(err, data)
+    if data then
+      table.insert(stdout_chunks, data)
+    end
+  end)
+
+  return true
+end
+
 function M.diff_remote_file(args)
   local alias = (args and args.fargs and args.fargs[1]) or "default"
   local config = core.load_config()
@@ -78,8 +137,7 @@ function M.diff_remote_file(args)
   f:write(batch_content)
   f:close()
 
-  -- Construct the sftp command
-  local sftp_command
+  -- Construct the sftp target
   local sftp_target
   if server_config.target then
     sftp_target = server_config.target
@@ -91,48 +149,31 @@ function M.diff_remote_file(args)
     return
   end
 
-  sftp_command = string.format('sftp -b "%s" %s', batch_temp_file, sftp_target)
+  -- Execute the command using libuv spawn (bypasses shell entirely)
+  local sftp_args = { "-b", batch_temp_file, sftp_target }
 
-  -- Execute the command
-  local stderr_output = {}
-  local job_id = vim.fn.jobstart(sftp_command, {
-    on_stderr = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line ~= "" then
-            table.insert(stderr_output, line)
-          end
-        end
-      end
-    end,
-    on_exit = function(_, exit_code)
-      -- Cleanup batch file first
+  local success = run_sftp_command(sftp_args,
+    function() -- on_success
       os.remove(batch_temp_file)
-
-      if exit_code == 0 then
-        vim.schedule(function()
-          vim.cmd("diffsplit " .. downloaded_temp_file)
-          vim.defer_fn(function()
-            os.remove(downloaded_temp_file)
-          end, 1000)
-        end)
-      else
-        local error_message = "Error downloading remote file."
-        if #stderr_output > 0 then
-          error_message = error_message .. " SFTP command output:\n" .. table.concat(stderr_output, "\n")
-        else
-          error_message = error_message .. " Check your SFTP configuration and if the file exists on the remote server. Exit code: " .. tostring(exit_code)
-        end
-        log.error(error_message)
-        -- Also remove the (likely empty) downloaded file on error
+      vim.cmd("diffsplit " .. downloaded_temp_file)
+      vim.defer_fn(function()
         os.remove(downloaded_temp_file)
-      end
+      end, 1000)
     end,
-  })
+    function(exit_code, stderr_output) -- on_error
+      os.remove(batch_temp_file)
+      local error_message = "Error downloading remote file."
+      if stderr_output and stderr_output ~= "" then
+        error_message = error_message .. " SFTP output:\n" .. stderr_output
+      else
+        error_message = error_message .. " Check your SFTP configuration and if the file exists on the remote server. Exit code: " .. tostring(exit_code)
+      end
+      log.error(error_message)
+      os.remove(downloaded_temp_file)
+    end
+  )
 
-  if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP download job. Command: " .. sftp_command)
-    -- Cleanup batch file
+  if not success then
     os.remove(batch_temp_file)
   end
 end
@@ -209,8 +250,7 @@ function M.upload_remote_file(args)
   f:write(batch_content)
   f:close()
 
-  -- Construct the sftp command
-  local sftp_command
+  -- Construct the sftp target
   local sftp_target
   if server_config.target then
     sftp_target = server_config.target
@@ -222,41 +262,27 @@ function M.upload_remote_file(args)
     return
   end
 
-  sftp_command = string.format('sftp -b "%s" %s', batch_temp_file, sftp_target)
+  -- Execute the command using libuv spawn (bypasses shell entirely)
+  local sftp_args = { "-b", batch_temp_file, sftp_target }
 
-  -- Execute the command
-  local stderr_output = {}
-  local job_id = vim.fn.jobstart(sftp_command, {
-    on_stderr = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line ~= "" then
-            table.insert(stderr_output, line)
-          end
-        end
-      end
-    end,
-    on_exit = function(_, exit_code)
-      -- Cleanup batch file first
+  local success = run_sftp_command(sftp_args,
+    function() -- on_success
       os.remove(batch_temp_file)
-
-      if exit_code == 0 then
-        log.info("File uploaded successfully to: " .. remote_file)
-      else
-        local error_message = "Error uploading remote file."
-        if #stderr_output > 0 then
-          error_message = error_message .. " SFTP command output:\n" .. table.concat(stderr_output, "\n")
-        else
-          error_message = error_message .. " Check your SFTP configuration and permissions. Exit code: " .. tostring(exit_code)
-        end
-        log.error(error_message)
-      end
+      log.info("File uploaded successfully to: " .. remote_file)
     end,
-  })
+    function(exit_code, stderr_output) -- on_error
+      os.remove(batch_temp_file)
+      local error_message = "Error uploading remote file."
+      if stderr_output and stderr_output ~= "" then
+        error_message = error_message .. " SFTP output:\n" .. stderr_output
+      else
+        error_message = error_message .. " Check your SFTP configuration and permissions. Exit code: " .. tostring(exit_code)
+      end
+      log.error(error_message)
+    end
+  )
 
-  if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP upload job. Command: " .. sftp_command)
-    -- Cleanup batch file
+  if not success then
     os.remove(batch_temp_file)
   end
 end
@@ -336,8 +362,7 @@ function M.download_and_replace_file(args)
   f:write(batch_content)
   f:close()
 
-  -- Construct the sftp command
-  local sftp_command
+  -- Construct the sftp target
   local sftp_target
   if server_config.target then
     sftp_target = server_config.target
@@ -349,65 +374,48 @@ function M.download_and_replace_file(args)
     return
   end
 
-  sftp_command = string.format('sftp -b "%s" %s', batch_temp_file, sftp_target)
+  -- Execute the command using libuv spawn (bypasses shell entirely)
+  local sftp_args = { "-b", batch_temp_file, sftp_target }
 
-  -- Execute the command
-  local stderr_output = {}
-  local job_id = vim.fn.jobstart(sftp_command, {
-    on_stderr = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line ~= "" then
-            table.insert(stderr_output, line)
-          end
-        end
-      end
-    end,
-    on_exit = function(_, exit_code)
-      -- Cleanup batch file first
+  local success = run_sftp_command(sftp_args,
+    function() -- on_success
       os.remove(batch_temp_file)
-
-      if exit_code == 0 then
-        vim.schedule(function()
-          -- Read the downloaded file content
-          local downloaded_content = {}
-          local file = io.open(downloaded_temp_file, "r")
-          if file then
-            for line in file:lines() do
-              table.insert(downloaded_content, line)
-            end
-            file:close()
-            
-            -- Replace current buffer content with downloaded content
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, downloaded_content)
-            -- Mark buffer as modified
-            vim.api.nvim_buf_set_option(0, "modified", true)
-            
-            log.info("File content replaced with remote version from: " .. remote_file)
-          else
-            log.error("Failed to read downloaded file: " .. downloaded_temp_file)
-          end
-          
-          -- Clean up temp file
-          os.remove(downloaded_temp_file)
-        end)
-      else
-        local error_message = "Error downloading remote file."
-        if #stderr_output > 0 then
-          error_message = error_message .. " SFTP command output:\n" .. table.concat(stderr_output, "\n")
-        else
-          error_message = error_message .. " Check your SFTP configuration and if the file exists on the remote server. Exit code: " .. tostring(exit_code)
+      -- Read the downloaded file content
+      local downloaded_content = {}
+      local file = io.open(downloaded_temp_file, "r")
+      if file then
+        for line in file:lines() do
+          table.insert(downloaded_content, line)
         end
-        log.error(error_message)
-        -- Also remove the (likely empty) downloaded file on error
-        os.remove(downloaded_temp_file)
-      end
-    end,
-  })
+        file:close()
 
-  if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP download job. Command: " .. sftp_command)
-    -- Cleanup batch file
+        -- Replace current buffer content with downloaded content
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, downloaded_content)
+        -- Mark buffer as modified
+        vim.api.nvim_buf_set_option(0, "modified", true)
+
+        log.info("File content replaced with remote version from: " .. remote_file)
+      else
+        log.error("Failed to read downloaded file: " .. downloaded_temp_file)
+      end
+
+      -- Clean up temp file
+      os.remove(downloaded_temp_file)
+    end,
+    function(exit_code, stderr_output) -- on_error
+      os.remove(batch_temp_file)
+      local error_message = "Error downloading remote file."
+      if stderr_output and stderr_output ~= "" then
+        error_message = error_message .. " SFTP output:\n" .. stderr_output
+      else
+        error_message = error_message .. " Check your SFTP configuration and if the file exists on the remote server. Exit code: " .. tostring(exit_code)
+      end
+      log.error(error_message)
+      os.remove(downloaded_temp_file)
+    end
+  )
+
+  if not success then
     os.remove(batch_temp_file)
   end
 end
