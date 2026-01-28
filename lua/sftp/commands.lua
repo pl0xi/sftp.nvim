@@ -78,7 +78,8 @@ function M.diff_remote_file(args)
   f:write(batch_content)
   f:close()
 
-  -- Construct the sftp target
+  -- Construct the sftp command
+  local sftp_command
   local sftp_target
   if server_config.target then
     sftp_target = server_config.target
@@ -90,8 +91,7 @@ function M.diff_remote_file(args)
     return
   end
 
-  -- Use array format for jobstart to avoid shell quoting issues across platforms
-  local sftp_command = { "sftp", "-b", batch_temp_file, sftp_target }
+  sftp_command = string.format('sftp -b "%s" %s', batch_temp_file, sftp_target)
 
   -- Execute the command
   local stderr_output = {}
@@ -131,7 +131,7 @@ function M.diff_remote_file(args)
   })
 
   if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP download job. Command: " .. table.concat(sftp_command, " "))
+    log.error("Failed to start SFTP download job. Command: " .. sftp_command)
     -- Cleanup batch file
     os.remove(batch_temp_file)
   end
@@ -209,7 +209,8 @@ function M.upload_remote_file(args)
   f:write(batch_content)
   f:close()
 
-  -- Construct the sftp target
+  -- Construct the sftp command
+  local sftp_command
   local sftp_target
   if server_config.target then
     sftp_target = server_config.target
@@ -221,8 +222,7 @@ function M.upload_remote_file(args)
     return
   end
 
-  -- Use array format for jobstart to avoid shell quoting issues across platforms
-  local sftp_command = { "sftp", "-b", batch_temp_file, sftp_target }
+  sftp_command = string.format('sftp -b "%s" %s', batch_temp_file, sftp_target)
 
   -- Execute the command
   local stderr_output = {}
@@ -255,7 +255,7 @@ function M.upload_remote_file(args)
   })
 
   if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP upload job. Command: " .. table.concat(sftp_command, " "))
+    log.error("Failed to start SFTP upload job. Command: " .. sftp_command)
     -- Cleanup batch file
     os.remove(batch_temp_file)
   end
@@ -336,7 +336,8 @@ function M.download_and_replace_file(args)
   f:write(batch_content)
   f:close()
 
-  -- Construct the sftp target
+  -- Construct the sftp command
+  local sftp_command
   local sftp_target
   if server_config.target then
     sftp_target = server_config.target
@@ -348,8 +349,7 @@ function M.download_and_replace_file(args)
     return
   end
 
-  -- Use array format for jobstart to avoid shell quoting issues across platforms
-  local sftp_command = { "sftp", "-b", batch_temp_file, sftp_target }
+  sftp_command = string.format('sftp -b "%s" %s', batch_temp_file, sftp_target)
 
   -- Execute the command
   local stderr_output = {}
@@ -406,7 +406,7 @@ function M.download_and_replace_file(args)
   })
 
   if job_id == 0 or job_id == -1 then
-    log.error("Failed to start SFTP download job. Command: " .. table.concat(sftp_command, " "))
+    log.error("Failed to start SFTP download job. Command: " .. sftp_command)
     -- Cleanup batch file
     os.remove(batch_temp_file)
   end
