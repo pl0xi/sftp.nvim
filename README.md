@@ -5,8 +5,7 @@ A Neovim plugin for syncing files with remote servers.
 ## Disclaimer
 
 This plugin was primarily developed with the assistance of an AI and was originally created for personal use. While it has been tested, there may be unforeseen bugs or limitations. Please use it with caution and feel free to contribute any improvements!
-
-Tested on Windows and Linux (bash).
+Only tested on Windows
 
 ## Features
 
