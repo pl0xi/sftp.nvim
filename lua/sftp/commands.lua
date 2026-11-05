@@ -6,13 +6,26 @@ local log = require("sftp.log")
 -- Use vim.uv (Neovim 0.10+) or vim.loop (older versions)
 local uv = vim.uv or vim.loop
 
+-- Names the operation in log lines. Lists fields explicitly so the server config
+-- is never logged wholesale.
+local function describe(context)
+  return string.format(
+    "%s alias=%q target=%q local=%q remote=%q",
+    context.op, context.alias, context.target, context.local_file, context.remote_file
+  )
+end
+
 -- Helper function to run sftp command using libuv spawn (bypasses shell entirely)
-local function run_sftp_command(sftp_args, on_success, on_error)
+local function run_sftp_command(context, sftp_args, on_success, on_error)
   local stderr_chunks = {}
   local stdout_chunks = {}
 
   local stdout = uv.new_pipe(false)
   local stderr = uv.new_pipe(false)
+
+  local description = describe(context)
+  local started_at = uv.hrtime()
+  log.debug(description .. " started args=" .. table.concat(sftp_args, " "))
 
   local handle, pid
   handle, pid = uv.spawn("sftp", {
@@ -26,12 +39,34 @@ local function run_sftp_command(sftp_args, on_success, on_error)
       handle:close()
     end
 
+    local stdout_output = table.concat(stdout_chunks, "")
     local stderr_output = table.concat(stderr_chunks, "")
+    local duration_ms = math.floor((uv.hrtime() - started_at) / 1e6)
 
     vim.schedule(function()
-      if exit_code == 0 then
+      -- A process killed by a signal can report exit code 0.
+      local succeeded = exit_code == 0 and signal == 0
+      log.record(
+        succeeded and "info" or "error",
+        string.format(
+          "%s %s exit=%d signal=%d duration_ms=%d",
+          description, succeeded and "succeeded" or "failed", exit_code, signal, duration_ms
+        )
+      )
+      if stdout_output ~= "" then
+        log.debug(description .. " stdout:\n" .. stdout_output)
+      end
+
+      if succeeded then
+        if stderr_output ~= "" then
+          log.debug(description .. " stderr:\n" .. stderr_output)
+        end
         on_success()
       else
+        if signal ~= 0 and stderr_output == "" then
+          stderr_output = "sftp was terminated by signal " .. signal
+        end
+        -- on_error logs the stderr output as part of its message.
         on_error(exit_code, stderr_output)
       end
     end)
@@ -39,6 +74,7 @@ local function run_sftp_command(sftp_args, on_success, on_error)
 
   if not handle then
     -- Failed to spawn - pid contains error message
+    log.record("error", description .. " failed to spawn: " .. tostring(pid))
     vim.schedule(function()
       on_error(-1, "Failed to spawn sftp: " .. tostring(pid))
     end)
@@ -47,19 +83,34 @@ local function run_sftp_command(sftp_args, on_success, on_error)
 
   -- Read stderr
   stderr:read_start(function(err, data)
+    if err then
+      log.record("warn", description .. " stderr read error: " .. tostring(err))
+    end
     if data then
       table.insert(stderr_chunks, data)
     end
   end)
 
-  -- Read stdout (not used but prevents blocking)
+  -- Read stdout (logged at debug level; also prevents blocking)
   stdout:read_start(function(err, data)
+    if err then
+      log.record("warn", description .. " stdout read error: " .. tostring(err))
+    end
     if data then
       table.insert(stdout_chunks, data)
     end
   end)
 
   return true
+end
+
+function M.open_log()
+  local path = log.path()
+  if vim.fn.filereadable(path) == 0 then
+    log.info("No sftp.nvim log file yet at: " .. path)
+    return
+  end
+  vim.cmd("split " .. vim.fn.fnameescape(path))
 end
 
 function M.diff_remote_file(args)
@@ -152,7 +203,15 @@ function M.diff_remote_file(args)
   -- Execute the command using libuv spawn (bypasses shell entirely)
   local sftp_args = { "-b", batch_temp_file, sftp_target }
 
-  local success = run_sftp_command(sftp_args,
+  local context = {
+    op = "diff",
+    alias = alias,
+    target = sftp_target,
+    local_file = local_file,
+    remote_file = remote_file,
+  }
+
+  local success = run_sftp_command(context, sftp_args,
     function() -- on_success
       os.remove(batch_temp_file)
       vim.cmd("diffsplit " .. downloaded_temp_file)
@@ -265,7 +324,15 @@ function M.upload_remote_file(args)
   -- Execute the command using libuv spawn (bypasses shell entirely)
   local sftp_args = { "-b", batch_temp_file, sftp_target }
 
-  local success = run_sftp_command(sftp_args,
+  local context = {
+    op = "upload",
+    alias = alias,
+    target = sftp_target,
+    local_file = local_file,
+    remote_file = remote_file,
+  }
+
+  local success = run_sftp_command(context, sftp_args,
     function() -- on_success
       os.remove(batch_temp_file)
       log.info("File uploaded successfully to: " .. remote_file)
@@ -377,7 +444,15 @@ function M.download_and_replace_file(args)
   -- Execute the command using libuv spawn (bypasses shell entirely)
   local sftp_args = { "-b", batch_temp_file, sftp_target }
 
-  local success = run_sftp_command(sftp_args,
+  local context = {
+    op = "download",
+    alias = alias,
+    target = sftp_target,
+    local_file = local_file,
+    remote_file = remote_file,
+  }
+
+  local success = run_sftp_command(context, sftp_args,
     function() -- on_success
       os.remove(batch_temp_file)
       -- Read the downloaded file content

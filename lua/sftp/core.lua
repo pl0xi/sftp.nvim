@@ -7,7 +7,7 @@ function M.load_config()
 
   -- Check if the project-specific config file exists
   if vim.fn.filereadable(project_config_path) == 1 then
-    log.info("Project-specific config found at: " .. project_config_path)
+    log.debug("Project-specific config found at: " .. project_config_path)
     local ok, project_config_or_err = pcall(dofile, project_config_path)
     if not ok then
       log.error("Error loading project config file (" .. project_config_path .. "):\n" .. project_config_or_err)

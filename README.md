@@ -15,7 +15,7 @@ Tested on Windows and Linux (bash).
 - **File Downloading**: Download remote files and replace the current file content.
 - **Project-Specific Configuration**: Easily configure settings on a per-project basis.
 - **Simple Initialization**: Get started quickly with a single command.
-- **Enhanced Error Logging**: Clear, informative error messages using `vim.notify`.
+- **Logging**: Clear messages through `vim.notify`, plus a persistent log file for diagnosing failures.
 
 ## Installation
 
@@ -36,6 +36,7 @@ Install with `lazy.nvim`:
 - `:SFTPUpload [alias]`: Uploads the current file to the remote server. If no `alias` is provided, it uses the `default` configuration.
 - `:SFTPDownload [alias]`: Downloads the remote version of the current file and replaces the local content. If no `alias` is provided, it uses the `default` configuration.
 - `:SFTPInit`: Creates a `.sftp/config.lua` file in your project's root with a configuration template.
+- `:SFTPLog`: Opens the log file in a split.
 
 ## Configuration
 
@@ -96,6 +97,30 @@ The `local_path` option specifies the local project directory to be synced with 
 
 For example, if `local_path` is `/path/to/project/src` and you edit `/path/to/project/src/api/main.go`, the plugin will sync it with `api/main.go` inside the `remote_path` on the server.
 
-## Error Logging
+## Logging
 
-The plugin uses `vim.notify` to provide clear and non-intrusive feedback. Errors, such as configuration issues or connection failures, are displayed as notifications, ensuring they are visible without disrupting your workflow.
+Messages appear through `vim.notify` and are also written to a log file, so you can look into a failure after the notification is gone.
+
+- **Location**: `sftp.log` in `stdpath("log")`. Run `:SFTPLog` to open it in a split.
+- **Size**: when the file reaches `max_size` it is moved to `sftp.log.1`, replacing any earlier backup.
+- **Recorded at `info`**: the operation, alias, target, local and remote paths, exit code, signal and duration of each transfer, plus every message shown as a notification.
+- **Recorded at `debug`**: the `sftp` arguments, its stdout, and its stderr on successful runs.
+
+The log contains hostnames, usernames and file paths, but never the full server configuration. On Linux and macOS a newly created log file is readable only by you. Check the contents before sharing it, for example in a bug report.
+
+Logging is a per-user setting, so it goes in `setup()` instead of `.sftp/config.lua`:
+
+```lua
+require("sftp").setup({
+  log = {
+    level = "info",        -- "debug", "info", "warn", "error" or "off"
+    max_size = 1024 * 1024, -- bytes
+  },
+})
+```
+
+`level` only affects the file. Notifications always appear for `info` and above. If the log can't be written, the plugin warns once and carries on without file logging for the rest of the session.
+
+Run `:checkhealth sftp` to check that `sftp` is on your `PATH` and the log file is writable.
+
+Requires Neovim 0.8 or newer.

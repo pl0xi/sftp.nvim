@@ -67,3 +67,14 @@ vim.api.nvim_create_user_command(
     desc = "Initialize a .sftp/config.lua file in the current directory.",
   }
 )
+
+vim.api.nvim_create_user_command(
+  "SftpLog",
+  function()
+    require("sftp.commands").open_log()
+  end,
+  {
+    nargs = 0,
+    desc = "Open the sftp.nvim log file in a split.",
+  }
+)
