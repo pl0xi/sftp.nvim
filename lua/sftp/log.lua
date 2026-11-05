@@ -12,12 +12,16 @@ local VIM_LEVELS = {
   error = vim.log.levels.ERROR,
 }
 
+local TRUNCATED_MARKER = " ...[truncated]\n"
+
 local state = {
   level = "info",
   max_size = 1024 * 1024,
   -- Set after a write fails, so a broken log warns once rather than on every message.
   disabled = false,
 }
+
+local PRIVATE_MODE = 384 -- 0600: the log holds hosts and paths
 
 -- Only call from the main loop: vim.fn is unavailable in fast contexts.
 function M.path()
@@ -26,8 +30,18 @@ end
 
 local function open_log()
   local path = M.path()
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-  return uv.fs_open(path, "a", 384) -- 384 is 0600: the log holds hosts and paths
+  -- vim.fn.mkdir raises rather than returning an error.
+  local ok, mkdir_err = pcall(vim.fn.mkdir, vim.fn.fnamemodify(path, ":h"), "p")
+  if not ok then
+    return nil, mkdir_err
+  end
+
+  local fd, open_err = uv.fs_open(path, "a", PRIVATE_MODE)
+  if fd then
+    -- The mode above only applies when the open creates the file.
+    uv.fs_fchmod(fd, PRIVATE_MODE)
+  end
+  return fd, open_err
 end
 
 local function rotate_if_needed(path, incoming_size)
@@ -35,15 +49,45 @@ local function rotate_if_needed(path, incoming_size)
   if stat and stat.type == "file" and stat.size + incoming_size > state.max_size then
     local backup = path .. ".1"
     os.remove(backup) -- os.rename fails on Windows if the target exists
-    os.rename(path, backup)
+    if os.rename(path, backup) then
+      uv.fs_chmod(backup, PRIVATE_MODE) -- the file may predate the private mode
+    end
   end
 end
 
+-- sftp output can include text from the server, such as a login banner. Escaping
+-- stops it from hiding or faking lines, or driving the terminal of whoever reads the log.
+local function escape_control_chars(text)
+  return (text
+    :gsub("[%z\1-\8\11-\31\127]", function(char)
+      return string.format("\\x%02x", char:byte())
+    end)
+    -- C1 control codes, as encoded in UTF-8. Some terminals act on these too.
+    :gsub("\194[\128-\159]", function(char)
+      return string.format("\\x%02x", char:byte(2))
+    end))
+end
+
 local function format_line(level, message, timestamp)
-  local text = tostring(message):gsub("\r\n", "\n"):gsub("%s+$", "")
+  local text = tostring(message)
+  -- Cut first, so an oversized message doesn't cost time in the patterns below.
+  local truncated = #text > state.max_size
+  if truncated then
+    text = text:sub(1, state.max_size)
+  end
+
+  text = text:gsub("\r\n", "\n"):gsub("%s+$", "")
+  text = escape_control_chars(text)
   -- Indenting continuation lines stops multi-line output from forging log entries.
   text = text:gsub("\n", "\n    ")
-  return string.format("%s [%s] %s\n", timestamp, level:upper(), text)
+
+  local line = string.format("%s [%s] %s\n", timestamp, level:upper(), text)
+  -- A single line must fit, or one message could exceed the size limit.
+  if truncated or #line > state.max_size then
+    local keep = math.max(0, state.max_size - #TRUNCATED_MARKER)
+    line = (line:sub(1, keep) .. TRUNCATED_MARKER):sub(1, state.max_size)
+  end
+  return line
 end
 
 local function disable_file_logging(err)
@@ -76,7 +120,12 @@ local function dispatch(level, message, should_notify)
 
   local function emit()
     if not state.disabled and LEVELS[level] >= LEVELS[state.level] then
-      write_line(format_line(level, message, timestamp))
+      local ok, err = pcall(function()
+        write_line(format_line(level, message, timestamp))
+      end)
+      if not ok then
+        disable_file_logging(err)
+      end
     end
     if should_notify then
       vim.notify(message, VIM_LEVELS[level])

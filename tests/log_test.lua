@@ -20,6 +20,7 @@ vim.fn.writefile({
   '  fail) echo "Connection closed" >&2; exit 255 ;;',
   '  big) head -c 300000 /dev/zero | tr "\\0" x >&2; exit 1 ;;',
   "  signal) kill -TERM $$; sleep 5 ;;",
+  '  capture) cp "$2" "$BATCH_COPY"; exit 0 ;;',
   "esac",
 }, bin_dir .. "/sftp")
 vim.fn.setfperm(bin_dir .. "/sftp", "rwxr-xr-x")
@@ -35,6 +36,8 @@ vim.fn.writefile({
   "} } }",
 }, project .. "/.sftp/config.lua")
 vim.fn.writefile({ "hello" }, project .. "/file.txt")
+vim.fn.mkdir(vim.fn.stdpath("state"), "p") -- vim.secure.trust keeps its database here
+assert(vim.secure.trust({ action = "allow", path = project .. "/.sftp/config.lua" }))
 vim.cmd("cd " .. vim.fn.fnameescape(project))
 vim.cmd("edit file.txt")
 
@@ -195,6 +198,201 @@ function tests.setup_options_apply_after_automatic_setup()
   require("sftp").setup()
   log.debug("after-bare-setup")
   assert(contains(read_log(), "after-bare-setup"))
+end
+
+function tests.control_chars_are_escaped()
+  log.error("real\rFORGED [INFO] ok\27[2J\7\0 \194\155 caf\195\169\ttab")
+  local content = read_log()
+  assert(not content:find("[%z\1-\8\11-\31\127]"), content)
+  assert(not content:find("\194\155", 1, true), content)
+  assert(contains(content, "real\\x0dFORGED"), content)
+  assert(contains(content, "\\x1b[2J\\x07\\x00 \\x9b"), content)
+  assert(contains(content, "caf\195\169\ttab"), "must keep UTF-8 and tabs: " .. content)
+end
+
+function tests.oversized_message_fits_max_size()
+  log.setup({ max_size = 1000 })
+  log.error(string.rep("x", 5000000))
+  local content = read_log()
+  assert(#content <= 1000, "file is " .. #content .. " bytes")
+  assert(contains(content, "[truncated]"), content)
+  assert(contains(content, "xxxx"), content)
+end
+
+function tests.existing_log_and_backup_become_private()
+  vim.fn.mkdir(vim.fn.fnamemodify(log.path(), ":h"), "p")
+  vim.fn.writefile({ string.rep("a", 200) }, log.path())
+  vim.fn.setfperm(log.path(), "rw-r--r--")
+  log.info("tighten")
+  assert(vim.fn.getfperm(log.path()) == "rw-------", vim.fn.getfperm(log.path()))
+
+  vim.fn.setfperm(log.path(), "rw-r--r--")
+  log.setup({ max_size = 100 })
+  log.info("rotate")
+  assert(vim.fn.getfperm(log.path() .. ".1") == "rw-------", vim.fn.getfperm(log.path() .. ".1"))
+end
+
+function tests.uncreatable_log_directory_does_not_raise()
+  local blocker = sandbox .. "/blocker"
+  vim.fn.writefile({}, blocker)
+  local state_home = vim.env.XDG_STATE_HOME
+  vim.env.XDG_STATE_HOME = blocker
+  local ok, err = pcall(function()
+    log.info("still-notified")
+    assert(notified("still-notified"))
+    assert(notified("file logging disabled"))
+    assert(log.status().writable == false)
+  end)
+  vim.env.XDG_STATE_HOME = state_home
+  assert(ok, err)
+end
+
+-- Stubs mkdir because a real blocked state directory would also hide the trust database.
+function tests.log_failure_does_not_break_an_upload()
+  local real_mkdir = vim.fn.mkdir
+  vim.fn.mkdir = function()
+    error("Vim:E739: Cannot create directory")
+  end
+  local ok, err = pcall(function()
+    vim.env.STUB_MODE = "ok"
+    commands.upload_remote_file({ fargs = {} })
+    assert(vim.wait(5000, function()
+      return notified("File uploaded successfully")
+    end, 10), "the upload's success path did not run")
+    assert(notified("file logging disabled"))
+  end)
+  vim.fn.mkdir = real_mkdir
+  assert(ok, err)
+end
+
+-- Opens a file with the given name in the project and uploads it, returning the batch file text.
+local function upload_captured(filename)
+  local batch_copy = sandbox .. "/batch-copy"
+  os.remove(batch_copy)
+  vim.env.BATCH_COPY = batch_copy
+  vim.fn.writefile({ "x" }, project .. "/" .. filename)
+  vim.cmd("edit " .. vim.fn.fnameescape(project .. "/" .. filename))
+  upload("capture")
+  vim.cmd("edit file.txt")
+  os.remove(project .. "/" .. filename)
+  local f = io.open(batch_copy, "r")
+  if not f then
+    return nil
+  end
+  local content = f:read("*a")
+  f:close()
+  return content
+end
+
+function tests.batch_paths_are_escaped()
+  local batch = upload_captured('we"ird*name?.txt')
+  assert(batch, "sftp did not run")
+  assert(contains(batch, 'we\\"ird*name?.txt" "/remote/we\\"ird*name?.txt"'), batch)
+end
+
+function tests.line_breaks_in_paths_are_refused()
+  local filename = 'a"\n!touch PWNED\n"b'
+  vim.fn.writefile({ "x" }, project .. "/" .. filename)
+  local buf = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buf, project .. "/" .. filename)
+  vim.api.nvim_set_current_buf(buf)
+  local batch_copy = sandbox .. "/batch-copy"
+  os.remove(batch_copy)
+  vim.env.BATCH_COPY = batch_copy
+  upload("capture")
+  vim.cmd("edit file.txt")
+  vim.api.nvim_buf_delete(buf, { force = true })
+  os.remove(project .. "/" .. filename)
+  assert(notified("Refusing to transfer"))
+  vim.wait(200)
+  assert(vim.fn.filereadable(batch_copy) == 0, "sftp must not run")
+end
+
+-- Makes a project whose config leaves a marker file when it runs, then enters it.
+-- Returns the marker path and the config path. The caller must leave via `leave_project`.
+local function hostile_project(name)
+  local dir = sandbox .. "/" .. name
+  vim.fn.mkdir(dir .. "/.sftp", "p")
+  local marker = dir .. "/RAN"
+  local config = dir .. "/.sftp/config.lua"
+  vim.fn.writefile({
+    "vim.fn.writefile({ 'x' }, '" .. marker .. "')",
+    "return { servers = { " .. name .. " = { target = 't', remote_path = '/r', local_path = '" .. dir .. "' } } }",
+  }, config)
+  vim.cmd("cd " .. vim.fn.fnameescape(dir))
+  return marker, config
+end
+
+local function leave_project()
+  vim.cmd("cd " .. vim.fn.fnameescape(project))
+end
+
+local core = require("sftp.core")
+
+function tests.completion_does_not_run_an_unapproved_config()
+  local marker = hostile_project("completion_project")
+  local completions = vim.fn.getcompletion("SftpUpload ", "cmdline")
+  leave_project()
+  assert(vim.fn.filereadable(marker) == 0, "config ran during tab completion")
+  assert(#completions == 0, vim.inspect(completions))
+end
+
+function tests.ignored_prompt_does_not_run_the_config()
+  local marker = hostile_project("ignored_project")
+  local real_confirm = vim.fn.confirm
+  local prompted = false
+  vim.fn.confirm = function()
+    prompted = true
+    return 1 -- "ignore"
+  end
+  local config = core.load_config()
+  vim.fn.confirm = real_confirm
+  leave_project()
+  assert(prompted, "expected a trust prompt")
+  assert(vim.fn.filereadable(marker) == 0, "untrusted config ran")
+  assert(next(config.servers) == nil, vim.inspect(config.servers))
+  assert(notified("not trusted"))
+end
+
+function tests.denied_config_does_not_run()
+  local marker, path = hostile_project("denied_project")
+  assert(vim.secure.trust({ action = "deny", path = path }))
+  local config = core.load_config()
+  leave_project()
+  assert(vim.fn.filereadable(marker) == 0, "denied config ran")
+  assert(next(config.servers) == nil, vim.inspect(config.servers))
+end
+
+function tests.denied_project_does_not_inherit_earlier_servers()
+  assert(core.load_config().servers.default.target == "test-host")
+  local _, path = hostile_project("stale_project")
+  assert(vim.secure.trust({ action = "deny", path = path }))
+  local config = core.load_config()
+  leave_project()
+  assert(config.servers.default == nil, "kept servers from the previous project")
+end
+
+function tests.trusted_config_loads_and_then_completes()
+  local marker, path = hostile_project("trusted_project")
+  assert(vim.secure.trust({ action = "allow", path = path }))
+
+  local before = vim.fn.getcompletion("SftpUpload ", "cmdline")
+  assert(#before == 0, "completion must wait for a command to load the config")
+
+  local config = core.load_config()
+  assert(vim.fn.filereadable(marker) == 1, "trusted config did not run")
+  assert(config.servers.trusted_project, vim.inspect(config.servers))
+
+  local after = vim.fn.getcompletion("SftpUpload ", "cmdline")
+  assert(vim.deep_equal(after, { "trusted_project" }), vim.inspect(after))
+
+  -- An edit invalidates the approval for completion.
+  os.remove(marker)
+  vim.fn.writefile({ "vim.fn.writefile({ 'x' }, '" .. marker .. "')", "return { servers = {} }" }, path)
+  local changed = vim.fn.getcompletion("SftpUpload ", "cmdline")
+  leave_project()
+  assert(vim.fn.filereadable(marker) == 0, "edited config ran during tab completion")
+  assert(#changed == 0, vim.inspect(changed))
 end
 
 function tests.upload_success_is_logged()

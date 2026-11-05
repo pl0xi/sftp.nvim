@@ -67,6 +67,14 @@ return {
 }
 ```
 
+### Trusting a project config
+
+`.sftp/config.lua` is Lua code, so a config in a cloned repository could run anything. The plugin loads it through Neovim's `vim.secure.read`, the same mechanism as `'exrc'`:
+
+- The first time a command uses a config, and again whenever the file changes, Neovim asks whether to trust it. Choosing `allow` remembers the file's hash; you can also run `:trust` with the file open.
+- If you don't allow it, the command stops with no servers configured.
+- Tab completion never prompts. It offers aliases only after a command has loaded that exact version of the file in the current session.
+
 ### SSH Configuration
 
 The `target` field corresponds to an alias in your SSH configuration file (`~/.ssh/config`). This allows you to leverage your existing SSH configurations for secure connections.
@@ -123,4 +131,12 @@ require("sftp").setup({
 
 Run `:checkhealth sftp` to check that `sftp` is on your `PATH` and the log file is writable.
 
-Requires Neovim 0.8 or newer.
+A single message is cut to fit `max_size`, and control characters are written as visible escapes such as `\x1b`, so server output can't fake log lines or affect your terminal.
+
+## Security
+
+Paths containing control characters, including newlines, are refused, because they could run commands through the `sftp` batch file.
+
+## Requirements
+
+Neovim 0.9 or newer.

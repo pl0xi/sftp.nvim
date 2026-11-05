@@ -8,7 +8,8 @@ vim.api.nvim_create_user_command(
   {
     nargs = "?",
     complete = function()
-      local config = require("sftp.core").load_config()
+      -- Completion must never prompt, or run a config that hasn't been approved.
+      local config = require("sftp.core").load_config({ prompt = false })
       local completions = {}
       for alias, _ in pairs(config.servers) do
         table.insert(completions, alias)
@@ -27,7 +28,8 @@ vim.api.nvim_create_user_command(
   {
     nargs = "?",
     complete = function()
-      local config = require("sftp.core").load_config()
+      -- Completion must never prompt, or run a config that hasn't been approved.
+      local config = require("sftp.core").load_config({ prompt = false })
       local completions = {}
       for alias, _ in pairs(config.servers) do
         table.insert(completions, alias)
@@ -46,7 +48,8 @@ vim.api.nvim_create_user_command(
   {
     nargs = "?",
     complete = function()
-      local config = require("sftp.core").load_config()
+      -- Completion must never prompt, or run a config that hasn't been approved.
+      local config = require("sftp.core").load_config({ prompt = false })
       local completions = {}
       for alias, _ in pairs(config.servers) do
         table.insert(completions, alias)
